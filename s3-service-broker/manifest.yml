@@ -1,0 +1,11 @@
+---
+applications:
+- name: s3-broker
+  path: ./target/s3-service-broker.jar
+  memory: 600M
+  buildpack: java_buildpack
+  instances: 1
+  timeout: 180
+  host: s3-broker
+  services:
+    - s3-broker-db
