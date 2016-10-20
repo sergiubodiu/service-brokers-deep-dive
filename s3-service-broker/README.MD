@@ -2,6 +2,21 @@
 
 This project is a Cloud Foundry S3 service broker using Spring Boot.
 
+## Deploy to Cloud Foundry
+
+Create dependencies:
+
+> cf create-service p-mysql 512mb s3-broker-db
+
+Push to local cloud foundry pcfdev:
+
+> cf push
+
+Test:
+
+> curl -H "X-Broker-API-Version: 2.9" http://admin:admin@s3-broker.local.pcfdev.io/v2/catalog
+
+
 ## Usage
 
 Register the service broker:
