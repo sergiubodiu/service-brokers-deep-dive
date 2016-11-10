@@ -1,24 +1,30 @@
 package io.pivotal.services.s3.service;
 
-import io.pivotal.services.s3.model.Credential;
-import io.pivotal.services.s3.model.S3ServiceInstance;
-import io.pivotal.services.s3.model.S3ServiceInstanceRepository;
-import io.pivotal.services.s3.model.S3User;
+import io.pivotal.services.s3.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cloud.servicebroker.exception.ServiceBrokerException;
-import org.springframework.cloud.servicebroker.exception.ServiceInstanceDoesNotExistException;
-import org.springframework.cloud.servicebroker.exception.ServiceInstanceExistsException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.servicebroker.exception.*;
 import org.springframework.cloud.servicebroker.model.*;
+import org.springframework.cloud.servicebroker.service.ServiceInstanceBindingService;
 import org.springframework.cloud.servicebroker.service.ServiceInstanceService;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Service;
 
 @Service
-public class S3ServiceInstanceService implements ServiceInstanceService {
+public class S3ServiceInstanceService implements ServiceInstanceService, ServiceInstanceBindingService {
 
     private Logger log = LoggerFactory.getLogger(S3ServiceInstanceService.class);
-    private S3ServiceInstanceRepository repository;
-    private S3Service s3Service;
+    private final S3ServiceInstanceRepository repository;
+    private final S3ServiceInstanceBindingRepository bindingRepository;
+    private final S3Service s3Service;
+
+    @Autowired
+    public S3ServiceInstanceService(S3ServiceInstanceRepository repository, S3ServiceInstanceBindingRepository bindingRepository, S3Service s3Service) {
+        this.repository = repository;
+        this.bindingRepository = bindingRepository;
+        this.s3Service = s3Service;
+    }
 
     @Override
     public CreateServiceInstanceResponse createServiceInstance(CreateServiceInstanceRequest request) {
@@ -28,12 +34,9 @@ public class S3ServiceInstanceService implements ServiceInstanceService {
             throw new ServiceInstanceExistsException(request.getServiceInstanceId(), request.getServiceDefinitionId());
 
         try {
-            S3User user = s3Service.createBucket(
-                    serviceInstance.getServiceInstanceId());
+            Credential credential = s3Service.createUserResult(serviceInstance.getServiceInstanceId());
 
-            serviceInstance.setCredential(
-                    new Credential(user.getCreateUserResult().getUser().getUserName(),
-                            user.getAccessKeyId(), user.getAccessKeySecret()));
+            serviceInstance.setCredential(credential);
 
             serviceInstance = repository.save(serviceInstance);
         } catch (Exception e) {
@@ -57,7 +60,7 @@ public class S3ServiceInstanceService implements ServiceInstanceService {
         // Delete service broker
         if (!s3Service.deleteServiceInstanceBucket(serviceInstance.getServiceInstanceId(),
                 serviceInstance.getCredential().getAccessKeyId(),
-                serviceInstance.getCredential().getUserName())) {
+                serviceInstance.getCredential().getServiceId())) {
             log.error("Could not delete the S3 bucket for the service instance");
         }
 
@@ -84,4 +87,74 @@ public class S3ServiceInstanceService implements ServiceInstanceService {
         return new UpdateServiceInstanceResponse();
     }
 
+    /**
+     * Create a new binding to a service instance.
+     *
+     * @param request containing parameters sent from Cloud Controller
+     * @return a CreateServiceInstanceBindingResponse
+     * @throws ServiceInstanceBindingExistsException if a binding with the given ID is already known to the broker
+     * @throws ServiceInstanceDoesNotExistException if a service instance with the given ID is not known to the broker
+     * @throws ServiceBrokerException on internal failure
+     */
+    @Override
+    public CreateServiceInstanceBindingResponse createServiceInstanceBinding(CreateServiceInstanceBindingRequest request) {
+        S3ServiceInstanceBinding serviceInstanceBinding = bindingRepository.findOne(request.getBindingId());
+
+        if (serviceInstanceBinding != null)
+            throw new ServiceInstanceBindingExistsException(request.getServiceInstanceId(), request.getBindingId());
+
+        S3ServiceInstance serviceInstance = null;
+
+        // Get service instance
+        try {
+            serviceInstance = repository.getOne(request.getServiceInstanceId());
+        } catch (ServiceInstanceDoesNotExistException ex) {
+            log.error("Could not get service instance {}", ex);
+            throw new ServiceBrokerException(ex);
+        }
+
+        serviceInstanceBinding = new S3ServiceInstanceBinding(request.getBindingId(),
+                request.getServiceInstanceId(),
+                request.getBoundAppGuid());
+
+        try {
+            serviceInstanceBinding = bindingRepository.save(serviceInstanceBinding);
+        } catch (Exception ex) {
+            log.error(ex.getLocalizedMessage(), ex);
+            throw new ServiceBrokerException(ex);
+        }
+
+        return new CreateServiceInstanceAppBindingResponse()
+                .withCredentials(CredentialResource.toMap(serviceInstance.getCredential()));
+    }
+
+    /**
+     * Delete a service instance binding.
+     *
+     * @param request containing parameters sent from Cloud Controller
+     * @throws ServiceInstanceDoesNotExistException if a service instance with the given ID is not known to the broker
+     * @throws ServiceInstanceBindingDoesNotExistException if a binding with the given ID is not known to the broker
+     */
+    @Override
+    public void deleteServiceInstanceBinding(DeleteServiceInstanceBindingRequest request) {
+
+        if (!bindingRepository.exists(request.getBindingId())) {
+            throw new ServiceBrokerException(String.format("Service instance binding does not exist: %s", request.getBindingId()));
+        }
+
+        S3ServiceInstanceBinding serviceInstanceBinding = bindingRepository.findOne(request.getBindingId());
+
+        try {
+            bindingRepository.delete(request.getBindingId());
+        } catch (Exception ex) {
+            log.error(ex.getLocalizedMessage(), ex);
+        }
+
+    }
+
+}
+
+interface S3ServiceInstanceBindingRepository extends JpaRepository<S3ServiceInstanceBinding, String> {
+}
+interface S3ServiceInstanceRepository extends JpaRepository<S3ServiceInstance, String> {
 }

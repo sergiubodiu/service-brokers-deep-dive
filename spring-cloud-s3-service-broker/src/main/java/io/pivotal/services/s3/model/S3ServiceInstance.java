@@ -1,20 +1,16 @@
 package io.pivotal.services.s3.model;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.cloud.servicebroker.model.CreateServiceInstanceRequest;
 import org.springframework.cloud.servicebroker.model.DeleteServiceInstanceRequest;
 import org.springframework.cloud.servicebroker.model.UpdateServiceInstanceRequest;
 
-import javax.persistence.*;
+import javax.persistence.EmbeddedId;
+import javax.persistence.Entity;
 
 @Entity
 public class S3ServiceInstance {
 
-    @Id
-    @JsonProperty("service_instance_id")
-    private String serviceInstanceId;
-    
     @JsonProperty("service_id")
     private String serviceDefinitionId;
     
@@ -30,8 +26,7 @@ public class S3ServiceInstance {
     @JsonProperty("dashboard_url")
     private String dashboardUrl;
 
-    @JsonIgnore
-    @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @EmbeddedId
     private Credential credential;
 
     private S3ServiceInstance() {
@@ -45,11 +40,12 @@ public class S3ServiceInstance {
      * @param request containing details of S3ServiceInstance
      */
     public S3ServiceInstance(CreateServiceInstanceRequest request) {
+        this.credential = new Credential();
+        this.credential.setServiceId(request.getServiceInstanceId());
         this.serviceDefinitionId = request.getServiceDefinitionId();
         this.planId = request.getPlanId();
         this.organizationGuid = request.getOrganizationGuid();
         this.spaceGuid = request.getSpaceGuid();
-        this.serviceInstanceId = request.getServiceInstanceId();
     }
 
     /**
@@ -60,7 +56,8 @@ public class S3ServiceInstance {
      * @param request containing details of S3ServiceInstance
      */
     public S3ServiceInstance(DeleteServiceInstanceRequest request) {
-        this.serviceInstanceId = request.getServiceInstanceId();
+        this.credential = new Credential();
+        this.credential.setServiceId(request.getServiceInstanceId());
         this.planId = request.getPlanId();
         this.serviceDefinitionId = request.getServiceDefinitionId();
     }
@@ -78,7 +75,7 @@ public class S3ServiceInstance {
     }
 
     public String getServiceInstanceId() {
-        return serviceInstanceId;
+        return credential.getServiceId();
     }
 
     public String getServiceDefinitionId() {

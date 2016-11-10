@@ -1,43 +1,33 @@
 package io.pivotal.services.s3.model;
 
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import java.util.UUID;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-@Entity
-public class Credential {
-    @Id
-    private String id;
+import javax.persistence.Embeddable;
+import java.io.Serializable;
 
-    private String userName;
+@Embeddable
+public class Credential implements Serializable {
+
+    @JsonProperty("service_instance_id")
+    private String serviceId;
     private String accessKeyId;
     private String secretAccessKey;
 
     public Credential() {
-        id = UUID.randomUUID().toString();
     }
 
-    public Credential(String userName, String accessKeyId, String secretAccessKey) {
-        this();
-        this.userName = userName;
+    public Credential(String serviceId, String accessKeyId, String secretAccessKey) {
+        this.serviceId = serviceId;
         this.accessKeyId = accessKeyId;
         this.secretAccessKey = secretAccessKey;
     }
 
-    public String getId() {
-        return id;
+    public String getServiceId() {
+        return serviceId;
     }
 
-    public void setId(String id) {
-        this.id = id;
-    }
-
-    public String getUserName() {
-        return userName;
-    }
-
-    public void setUserName(String userName) {
-        this.userName = userName;
+    public void setServiceId(String serviceId) {
+        this.serviceId = serviceId;
     }
 
     public String getAccessKeyId() {
@@ -59,8 +49,7 @@ public class Credential {
     @Override
     public String toString() {
         return "Credential{" +
-                "id='" + id + '\'' +
-                ", userName='" + userName + '\'' +
+                ", serviceId='" + serviceId + '\'' +
                 ", accessKeyId='" + accessKeyId + '\'' +
                 ", secretAccessKey='" + secretAccessKey + '\'' +
                 '}';

@@ -10,8 +10,7 @@ import com.amazonaws.services.s3.model.CreateBucketRequest;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.google.common.io.Resources;
-import io.pivotal.services.s3.model.S3User;
-import org.apache.commons.codec.Charsets;
+import io.pivotal.services.s3.model.Credential;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +21,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -62,31 +62,12 @@ public class S3Service {
 
         try {
             URL policyDocumentUrl = new ClassPathResource("manage-bucket-policy.json").getURL();
-            policyDocument = Resources.toString(policyDocumentUrl, Charsets.UTF_8);
+            policyDocument = Resources.toString(policyDocumentUrl, StandardCharsets.UTF_8);
         } catch (IOException ex) {
             log.error("Error retrieving manage bucket policy from resources {}", ex);
         }
 
         return policyDocument;
-    }
-
-    /**
-     * Create a new S3 bucket for the service instance using the unique application id
-     *
-     * @param applicationId is the unique application id of the service instance in the broker's catalog
-     * @return an instance of {@link S3User} containing credentials or null if an issue was encountered
-     */
-    public S3User createBucket(String applicationId) throws ServiceBrokerException {
-        S3User user;
-
-        try {
-            user = createUserResult(applicationId);
-        } catch (Exception ex) {
-            log.error("Error creating IAM user {}", ex);
-            throw new ServiceBrokerException("Error creating IAM user {}", ex);
-        }
-
-        return user;
     }
 
     /**
@@ -176,37 +157,35 @@ public class S3Service {
     /**
      * Create a new IAM user for a service instance using its unique id
      *
-     * @param applicationId is the service instance's unique id from the broker catalog
-     * @return a new {@link S3User} containing the credential details for the new service instance's IAM user
+     * @param serviceInstanceId is the service instance's unique id from the broker catalog
+     * @return a new {@link Credential} containing the credential details for the new service instance's IAM user
      */
-    public S3User createUserResult(String applicationId) throws ServiceBrokerException {
+    public Credential createUserResult(String serviceInstanceId) throws ServiceBrokerException {
 
-        S3User user = new S3User(applicationId);
 
-        // Create a new user for the service instance
-        user.setCreateUserResult(identityManagement.createUser(new CreateUserRequest(applicationId)));
+        // Create a new userResult for the service instance
+        CreateUserResult userResult = identityManagement.createUser(new CreateUserRequest(serviceInstanceId));
 
-        // Create access key for new user
+        // Create access key for new userResult
         CreateAccessKeyResult createAccessKeyResult =
-                identityManagement.createAccessKey(new CreateAccessKeyRequest(applicationId)
-                        .withUserName(user.getCreateUserResult().getUser().getUserName()));
+                identityManagement.createAccessKey(new CreateAccessKeyRequest(serviceInstanceId)
+                        .withUserName(userResult.getUser().getUserName()));
 
-        // Get access key and secret for new user
-        user.setAccessKeyId(createAccessKeyResult.getAccessKey().getAccessKeyId());
-        user.setAccessKeySecret(createAccessKeyResult.getAccessKey().getSecretAccessKey());
+        // Get access key and secret for new userResult
+        AccessKey accessKey = createAccessKeyResult.getAccessKey();
 
         // Create the bucket for the service instance
-        amazonS3.createBucket(new CreateBucketRequest(applicationId));
+        amazonS3.createBucket(new CreateBucketRequest(serviceInstanceId));
 
-        // Get or create the manage bucket policy for the new user
+        // Get or create the manage bucket policy for the new userResult
         String manageBucketArn = getManageBucketPolicyArn();
 
-        // Attach the manage bucket policy to the new user
+        // Attach the manage bucket policy to the new userResult
         identityManagement.attachUserPolicy(new AttachUserPolicyRequest()
-                .withUserName(user.getCreateUserResult().getUser().getUserName())
+                .withUserName(userResult.getUser().getUserName())
                 .withPolicyArn(manageBucketArn));
 
-        return user;
+        return new Credential(serviceInstanceId, accessKey.getAccessKeyId(), accessKey.getSecretAccessKey());
     }
 
 }
